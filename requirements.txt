@@ -1,0 +1,5 @@
+numpy>=1.19.0
+matplotlib>=3.3.0
+pyquaternion>=0.9.0
+nuscenes-devkit>=1.1.0
+
