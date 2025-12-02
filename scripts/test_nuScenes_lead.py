@@ -6,7 +6,7 @@ from nuscenes.nuscenes import NuScenes
 from nuscenes.utils.data_classes import LidarPointCloud, RadarPointCloud
 from nuscenes.utils.geometry_utils import transform_matrix
 from ekf_script import EKF_Paper
-
+from standard_ekf import EKF_Standard
 
 def run_ekf_on_nuscenes_leadcar(nusc, ekf, scene_index=0):
     """Run EKF on a nuScenes scene tracking a lead car using LiDAR & RADAR."""
@@ -113,7 +113,9 @@ def run_ekf_on_nuscenes_leadcar(nusc, ekf, scene_index=0):
         return np.array([x_lidar, y_lidar, x_radar, y_radar, theta])
     
     # Find lead car and build trajectory
+    #lead_token = find_target_car(mode='farthest', min_x=30.0, max_y=5.0)
     lead_token = find_lead_car()
+   
     true_states = []
     times = []
     tokens = []
@@ -143,6 +145,9 @@ def run_ekf_on_nuscenes_leadcar(nusc, ekf, scene_index=0):
     
     x_true = np.column_stack([true_states[:, 0], true_states[:, 1], V, true_states[:, 2]])
     
+    # get distances for reliability functions
+    dists = np.linalg.norm(true_states[:, :2], axis=1)
+
     # Get measurements
     z_list = []
     for tok in tokens:
@@ -162,14 +167,18 @@ def run_ekf_on_nuscenes_leadcar(nusc, ekf, scene_index=0):
         if not np.any(np.isnan(z_all[k])):
             ekf.update(z_all[k], dt_seq[k])
         est_states.append(ekf.phi.copy())
+
+    est_states = np.array(est_states)
     
-    return times, x_true, np.array(est_states), z_all
+    return times, x_true, est_states, z_all, dists
+
 
 
 def plot_results(times, x_true, est_states, z_all):
     """Plot results and print RMSE"""
     t = times - times[0]
     
+
     # RMSE
     err = est_states - x_true
     err_theta = (err[:, 3] + np.pi) % (2 * np.pi) - np.pi
@@ -180,7 +189,21 @@ def plot_results(times, x_true, est_states, z_all):
     print(f"  θ: {np.sqrt(np.mean(err_theta**2)):.3f} rad")
     
     # Plots
+    plt.figure(figsize=(10,4))
+    plt.plot(t, dists, linewidth=2)
+    plt.xlabel("Time (s)")
+    plt.ylabel("Distance to lead car (m)")
+    plt.title("True ego → lead vehicle distance over time")
+    plt.grid(True)
+    plt.tight_layout()
+
+    print("Distance stats (m):")
+    print(f"  min:   {np.min(dists):.3f}")
+    print(f"  max:   {np.max(dists):.3f}")
+    print(f"  mean:  {np.mean(dists):.3f}")
+    print(f"  med:   {np.median(dists):.3f}")
     fig, axs = plt.subplots(2, 2, figsize=(10, 8))
+
     
     axs[0, 0].plot(t, x_true[:, 0], label='True', linewidth=2)
     axs[0, 0].plot(t, est_states[:, 0], '--', label='EKF', linewidth=2)
@@ -217,23 +240,26 @@ if __name__ == "__main__":
     nusc = NuScenes(version='v1.0-mini', dataroot='data', verbose=True)
     
     # EKF parameters
-    Q = np.diag([0.05, 0.05, 0.02, 0.01])
-    R = np.diag([0.5, 0.1, 1.5, 3.0, 0.02])
-    
-    a1 = 0.1
-    b1 = 1.0
-    X_lidar_reli = 25.0 
-    Y_lidar_reli = 0.0
-    a2 = 0.10
-    b2 = 0.5    
-    X_radar_reli = 50.0
-    Y_radar_reli = 0.0
-    
+    Q = np.diag([0.5, 0.05, 0.05, 0.05])
+    R = np.diag([0.05, 0.05, 0.05, 0.05, 0.05])
+    #Q = np.diag([0.05, 0.05, 0.02, 0.01])
+    #R = np.diag([0.5, 0.1, 1.5, 3.0, 0.02])
+
+    a1 = 0.05
+    b1 = 0.05
+    X_lidar_reli = 30
+    X_radar_reli = 80
+    a2 = .06
+    b2 = .25
+    Y_lidar_reli = 20
+    Y_radar_reli = 80
+
+    #ekf = EKF_Standard(Q, R, a1, b1, X_lidar_reli, Y_lidar_reli, a2, b2, X_radar_reli, Y_radar_reli)
     ekf = EKF_Paper(Q, R, a1, b1, X_lidar_reli, Y_lidar_reli, a2, b2, X_radar_reli, Y_radar_reli)
     
 
-    times, x_true, est_states, z_all = run_ekf_on_nuscenes_leadcar(nusc, ekf, scene_index=0)
-    
+    times, x_true, est_states, z_all, dists = run_ekf_on_nuscenes_leadcar(nusc, ekf, scene_index=0)
+
     print(f"\nProcessed {len(times)} timesteps")
     plot_results(times, x_true, est_states, z_all)
     plt.show()
