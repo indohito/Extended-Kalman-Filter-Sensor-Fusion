@@ -34,8 +34,6 @@ class EKF_Standard:
         self.phi = None  
         self.P = None
 
-    # EKF sigmoid reliability functions & derivatives (Eq. 8) 
-
     def set_initial_state(self, x0, P0=None):
         """
         Set initial state and covariance
@@ -49,9 +47,6 @@ class EKF_Standard:
     # EKF process model f and A (Eq. 4 & 5) 
 
     def f(self, x, dt):
-        """
-        Nonlinear process model (Eq. 4), applied from t-1 to t:
-        """
         x_pos, y_pos, V, theta = x
         x_new = np.empty_like(x, dtype=float)
         x_new[0] = x_pos + dt * V * np.cos(theta)
@@ -61,26 +56,13 @@ class EKF_Standard:
         return x_new
 
     def A(self, x, dt):
-        """
-        Jacobian A_{t-1}^j (Eq. 5) 
-        """
         _, _, V, theta = x
         A = np.eye(4, dtype=float)
         A[0, 2] = dt * np.cos(theta)
         A[1, 2] = dt * np.sin(theta)
         return A
 
-    # EKF measurement model h and H (Eq. 6 & 7) 
-
-        # EKF measurement model h and H (standard, no reliability) 
-
     def h(self, x):
-        """
-        Standard measurement function:
-        z = [x_lidar, y_lidar, x_radar, y_radar, theta]^T
-        where LiDAR and RADAR both directly observe (x, y) in ego frame,
-        and theta is a direct heading measurement.
-        """
         x_pos, y_pos, V, theta = x
 
         z_pred = np.array([
@@ -95,10 +77,6 @@ class EKF_Standard:
 
 
     def H(self, x, z, dt):
-        """
-        Standard measurement Jacobian H
-        
-        """
         H = np.zeros((5, 4), dtype=float)
 
         # x_lidar = x
@@ -121,18 +99,11 @@ class EKF_Standard:
 
 
     def predict(self, dt):
-        """
-        Prediction step (Eqs. 9 & 10):
-        """
         A = self.A(self.phi, dt)
         self.phi = self.f(self.phi, dt)
         self.P = A @ self.P @ A.T + self.Q
 
     def update(self, z, dt):
-        """
-        Update step (Eqs. 11–13):
-
-        """
         z = np.asarray(z, dtype=float).reshape(5,)
 
         # (Eq. 7)
